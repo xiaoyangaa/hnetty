@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE log4j:configuration SYSTEM "log4j.dtd">
+<log4j:configuration xmlns:log4j='http://jakarta.apache.org/log4j/'>
+
+    <!-- Test Configs -->
+
+    <!--<appender name="DEFAULT-APPENDER" class="org.apache.log4j.DailyRollingFileAppender">-->
+    <!--<param name="immediateFlush" value="true"></param>-->
+    <!--<param name="file" value="/${app.name}-default.log"></param>-->
+    <!--<param name="datePattern" value="'.'yyyy-MM-dd"></param>-->
+    <!--<layout class="org.apache.log4j.PatternLayout">-->
+    <!--<param name="ConversionPattern"-->
+    <!--value="%d{yyyy-MM-dd HH:mm:ss} %-5p [%X{traceId}/%c{1}] - %m%n"></param>-->
+    <!--</layout>-->
+    <!--</appender>-->
+
+
+    <!-- ConsoleAppender -->
+    <appender name="CONSOLE-DEFAULT" class="org.apache.log4j.ConsoleAppender">
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern"
+                   value="%d{yyyy-MM-dd HH:mm:ss} %-5p [%X{traceId}/%c{1}] - %m%n"></param>
+        </layout>
+    </appender>
+    <appender name="CONSOLE-DEFAULT-DIGEST" class="org.apache.log4j.ConsoleAppender">
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="%d{yyyy-MM-dd HH:mm:ss},%m%n"></param>
+        </layout>
+    </appender>
+
+    <root>
+        <priority value="info"/>
+        <appender-ref ref="CONSOLE-DEFAULT"/>
+    </root>
+</log4j:configuration>
