@@ -5,6 +5,7 @@ import transport.channel.HChannelGroup;
 import transport.channel.RemoteAddress;
 
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -19,6 +20,8 @@ public class HChannelGroupImpl implements HChannelGroup {
     private int capacity;
 
     private volatile CopyOnWriteArrayList<HChannel> channels = new CopyOnWriteArrayList<>();
+
+    private volatile ConcurrentLinkedDeque<HChannel> queue;
 
 
     private final ReentrantLock lock = new ReentrantLock();

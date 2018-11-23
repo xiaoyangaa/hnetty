@@ -75,8 +75,6 @@ public class DefaultHConnector extends AbstractHConnector<NioSocketChannel> {
     protected void initConfig() {
         Bootstrap bootstrap = getBootstrap();
         bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
-
-
     }
 
     @Override

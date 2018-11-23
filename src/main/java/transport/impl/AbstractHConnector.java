@@ -26,12 +26,15 @@ public abstract class AbstractHConnector<T> implements HConnector<T> {
 
     private Bootstrap bootstrap;
     private EventLoopGroup worker;
+    private EventLoopGroup boss;
     private int nWorkers;
     private CopyOnWriteArrayList<HChannelGroup> hChannelGroups;
     private volatile int maxConnection;
     private List<RemoteAddress> remoteAddressList;
     private volatile int maxConnectionPerRoute;
 
+
+    private static final int DEFAULT_CAPACITY_GROUP = 100;
     private volatile ConcurrentHashMap<RemoteAddress, HChannelGroup> groupMap = new ConcurrentHashMap<>();
 
     public AbstractHConnector(int nWorkers, int maxConnectionPerRoute, int maxConnection, List<RemoteAddress> remoteAddressList) {
@@ -62,12 +65,14 @@ public abstract class AbstractHConnector<T> implements HConnector<T> {
         ThreadFactory workerFactory = workerThreadFactory("hnetty.connector");
         worker = initEventLoopGroup(nWorkers, workerFactory);
         bootstrap = new Bootstrap().group(worker);
+
         bootstrap.channel(NioSocketChannel.class);
         hChannelGroups = new CopyOnWriteArrayList();
 
         initConfig();
         for (RemoteAddress remoteAddress : remoteAddressList) {
             HChannelGroup hChannelGroup = new HChannelGroupImpl();
+            hChannelGroup.setCapacity(DEFAULT_CAPACITY_GROUP);
             hChannelGroups.add(hChannelGroup);
             groupMap.put(remoteAddress, hChannelGroup);
         }

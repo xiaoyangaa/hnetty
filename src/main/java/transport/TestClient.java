@@ -25,9 +25,9 @@ public class TestClient {
 
         ArrayList<RemoteAddress> addressArrayList = new ArrayList<>();
 
-        addressArrayList.add(new RemoteAddress("127.0.0.1", 80));
+        addressArrayList.add(new RemoteAddress("10.101.92.67", 80));
 
-        HConnector<NioSocketChannel> hConnector = new DefaultHConnector(1, 100, 100, addressArrayList);
+        HConnector<NioSocketChannel> hConnector = new DefaultHConnector(4, 4, 4, addressArrayList);
 
         HClient defaultHClient = new DefaultHClient(hConnector);
 
@@ -43,14 +43,14 @@ public class TestClient {
     }
 
 
-    private static HRequest buildRequest(int i) throws Exception {
+
+    public static HRequest buildRequest(int i) throws Exception {
         URI uri = new URI("http://127.0.0.1:80/test.do?user=yang");
         DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri.toASCIIString());
         // 构建http请求
         request.headers().set(HttpHeaders.Names.HOST, "http://127.0.0.1");
         request.headers().set(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.KEEP_ALIVE);
         request.headers().set(HttpHeaders.Names.CONTENT_LENGTH, request.content().readableBytes());
-
         HRequest hRequest = new HRequest();
         hRequest.setRemoteAddress(new RemoteAddress("127.0.0.1", 80));
         hRequest.setRequest(request);

@@ -26,6 +26,7 @@ public class HttpClientInboundHandler extends SimpleChannelInboundHandler {
     private int currentTime = 0;
 
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
+        System.out.println("read >>>>>>>>>>"+msg);
         if (msg instanceof HttpResponse) {
             HttpResponse response = (HttpResponse) msg;
             HttpResponseStatus status = response.status();
@@ -73,15 +74,15 @@ public class HttpClientInboundHandler extends SimpleChannelInboundHandler {
     }
 
     private static HRequest buildCheckAliveRequest(int i) throws Exception {
-        URI uri = new URI("http://127.0.0.1:80/check.do");
+        URI uri = new URI("http://10.101.92.67:80/check.do");
         DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri.toASCIIString());
         // 构建http请求
-        request.headers().set(HttpHeaders.Names.HOST, "http://127.0.0.1");
+        request.headers().set(HttpHeaders.Names.HOST, "http://10.101.92.67");
         request.headers().set(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.KEEP_ALIVE);
         request.headers().set(HttpHeaders.Names.CONTENT_LENGTH, request.content().readableBytes());
 
         HRequest hRequest = new HRequest();
-        hRequest.setRemoteAddress(new RemoteAddress("127.0.0.1", 80));
+        hRequest.setRemoteAddress(new RemoteAddress("http://10.101.92.67", 80));
         hRequest.setRequest(request);
         hRequest.setRequestId(i);
         return hRequest;
