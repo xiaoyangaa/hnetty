@@ -327,10 +327,139 @@ while(true){
 
 下面一点点来看
 select：
+这个方法也是蛮复杂的：
+ ```java
+//这个方法我理解的就是看看
+private void select(boolean oldWakenUp) throws IOException {
+        Selector selector = this.selector;
+        try {
+            int selectCnt = 0;
+            long currentTimeNanos = System.nanoTime();
+            long selectDeadLineNanos = currentTimeNanos + delayNanos(currentTimeNanos);
+            for (;;) {
+                long timeoutMillis = (selectDeadLineNanos - currentTimeNanos + 500000L) / 1000000L;
+                
+                //timeoutMillis<==0说明这个delayNanos已经小于-0.5ms
+                //那就赶紧把这里的循环break掉，去外面执行任务了.
+                if (timeoutMillis <= 0) {
+                    if (selectCnt == 0) {
+                        selector.selectNow();
+                        selectCnt = 1;
+                    }
+                    break;
+                }
+
+                // If a task was submitted when wakenUp value was true, the task didn't get a chance to call
+                // Selector#wakeup. So we need to check task queue again before executing select operation.
+                // If we don't, the task might be pended until select operation was timed out.
+                // It might be pended until idle timeout if IdleStateHandler existed in pipeline.
+                //这里也是，如果有任务，或者已经被唤醒了，都赶紧退出循环去外面执行任务啥的了。
+                if (hasTasks() && wakenUp.compareAndSet(false, true)) {
+                    selector.selectNow();
+                    selectCnt = 1;
+                    break;
+                }
+
+                //这里是整个方法中唯一会可能阻塞的地方，这里的timeoutMillis就说明这个线程在这一段时间内基本上都是没有任务需要执行的，可以放心大胆的阻塞，等待事件的到来;
+                int selectedKeys = selector.select(timeoutMillis);
+                selectCnt ++;
+
+                if (selectedKeys != 0 || oldWakenUp || wakenUp.get() || hasTasks() || hasScheduledTasks()) {
+                    // - Selected something,
+                    // - waken up by user, or
+                    // - the task queue has a pending task.
+                    // - a scheduled task is ready for processing
+                    break;
+                }
+                if (Thread.interrupted()) {
+                    // Thread was interrupted so reset selected keys and break so we not run into a busy loop.
+                    // As this is most likely a bug in the handler of the user or it's client library we will
+                    // also log it.
+                    //
+                    // See https://github.com/netty/netty/issues/2426
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Selector.select() returned prematurely because " +
+                                "Thread.currentThread().interrupt() was called. Use " +
+                                "NioEventLoop.shutdownGracefully() to shutdown the NioEventLoop.");
+                    }
+                    selectCnt = 1;
+                    break;
+                }
+
+                long time = System.nanoTime();
+                if (time - TimeUnit.MILLISECONDS.toNanos(timeoutMillis) >= currentTimeNanos) {
+                    // timeoutMillis elapsed without anything selected.
+                    selectCnt = 1;
+                } else if (SELECTOR_AUTO_REBUILD_THRESHOLD > 0 &&
+                        selectCnt >= SELECTOR_AUTO_REBUILD_THRESHOLD) {
+                    // The selector returned prematurely many times in a row.
+                    // Rebuild the selector to work around the problem.
+                    //这里就是解决那个臭名昭著的nio的空轮训的bug，这里如果发现前面没有阻塞，而循环次数又超过了我们设置的阈值，那就说明完蛋了，八成是碰上bug了，就重建这个selector了。
+                    logger.warn(
+                            "Selector.select() returned prematurely {} times in a row; rebuilding Selector {}.",
+                            selectCnt, selector);
+
+                    rebuildSelector();
+                    selector = this.selector;
+
+                    // Select again to populate selectedKeys.
+                    selector.selectNow();
+                    selectCnt = 1;
+                    break;
+                }
+
+                currentTimeNanos = time;
+            }
+
+            if (selectCnt > MIN_PREMATURE_SELECTOR_RETURNS) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Selector.select() returned prematurely {} times in a row for Selector {}.",
+                            selectCnt - 1, selector);
+                }
+            }
+        } catch (CancelledKeyException e) {
+            if (logger.isDebugEnabled()) {
+                logger.debug(CancelledKeyException.class.getSimpleName() + " raised by a Selector {} - JDK bug?",
+                        selector, e);
+            }
+            // Harmless exception - log anyway
+        }
+    }
+```
+
+这个方法的核心就是**`int selectedKeys = selector.select(timeoutMillis)`**;说白了，就是让注册器阻塞并且等待一段时间，这个时间是我们计算发现这个时间段内不会有任务执行的时间。
 
 
+processSelectedKeys()：
+这个方法就没太多可说的了，无非就是处理当前的事件，像我们作为客户端发起连接就是connect，服务端监听连接就是accept，或者大家都会关注的read和write事件。
+注意，在这个地方，我们最终会调用这个方法：
 
-processSelectedKeys：
+```java
+
+@Override
+        public final void finishConnect() {
+            // Note this method is invoked by the event loop only if the connection attempt was
+            // neither cancelled nor timed out.
+
+            assert eventLoop().inEventLoop();
+
+            try {
+                boolean wasActive = isActive();
+                doFinishConnect();
+                fulfillConnectPromise(connectPromise, wasActive);
+            } catch (Throwable t) {
+                fulfillConnectPromise(connectPromise, annotateConnectException(t, requestedRemoteAddress));
+            } finally {
+                // Check for null as the connectTimeoutFuture is only created if a connectTimeoutMillis > 0 is used
+                // See https://github.com/netty/netty/issues/1770
+                if (connectTimeoutFuture != null) {
+                    connectTimeoutFuture.cancel(false);
+                }
+                connectPromise = null;
+            }
+        }
+```
+对了，在`fulfillConnectPromise`里面我们会告诉前面所有的pipeline，这个channel现在是active了。
 
 
 
@@ -338,6 +467,9 @@ processSelectedKeys：
 
 
 runAllTasks:
+它会首先把schecduetaskQueue中快要到期的加入到taskQueue中，然后再从taskQueue中循环的取出task来，并且在当前线程执行task。
+所以我们这里就可以知道为什么这个taskQueue要使用单消费者多生产者了，因为这个task会在很多地方被add，但是只有这里才会poll。
+task有很多种，在这里是哪个task呢？
 还记得我们之前提到的execute方法，如果eventloop的线程还没有启动，先启动线程，那么我们现在线程启动了，会从taskqueue中取出这个task，
 这个task是啥来着？
 我们再重新回到：`io.netty.channel.AbstractChannel.AbstractUnsafe.register()`这个方法中
@@ -570,6 +702,41 @@ protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddr
         }
     }
 ```
-可以看到它调用了底层的socket去连接，这里通常是连接不上的，所以需要注册一个感兴趣的事件也就是SelectionKey.OP_CONNECT
+可以看到它调用了底层的socket去连接，这里通常是连接不上的，**所以需要注册一个感兴趣的事件也就是SelectionKey.OP_CONNECT**
+
 **而我们通过抓包工具也可以看出，在这个socketUtils的方法执行以后，才开始有了三次握手。**
 ---
+
+到了这里整体的流程就完全的串联上了：
+
+从时间上来说，客户端如果去发起一个连接，实际上，它要做的是先启动线程，然后提交各种任务，然后自己在线程里面去阻塞并轮询事件，如果有感兴趣的事件发生了，就去做处理，处理完了接着执行任务。
+
+那么现在来回答我们初始的几个问题：
+
+1.tcp三次握手是何时发生的？
+三次握手发生在执行线程任务的时候，只有在doConnect方法中调用socket去连接的时候才会发生，但是发生之后，并不会立马连接上，这里是个异步方法。
+在这里去注册一个connect事件，等到线程select到这个key的时候，会完成connect。
+
+2.channel什么时候registered?
+registed是所有的状态中第一个完成的状态，是给channel注册一个key=0。
+3.channel什么时候connect?
+等到底层执行完三次握手之后，selector阻塞轮询就会感知到这个状态，并且执行finishConnect()通知大家这个channel变成了active。
+4.channel什么时候active?
+如上；
+
+
+所以说了这么一大串，netty的流程看起来好像很多回调然后流程上跑来跑去的，但是其实我们只需要抓住两个最大的核心就可以了：
+
+1.netty的线程模型为什么保证了对于同一个channel来说，它是线程安全的？
+因为它有个最为经典的判断
+ ```java
+if(ineventloop()){
+    //bllallala
+}else{
+    addTask(Runnable r);
+}
+```
+这就保证了同一个channel不会被两个线程共享，同一个channel的管理也一定是在同一个线程中完成的（这里只说netty的eventloop线程组）
+2.那怎么保证这个channel的状态迁移在我们可以控制的范围内呢？
+那就是回调+责任链的方式，通过回调，保证了流程上是受到我们的控制的(先register之后才能connect，connect成功了才能active)，通过责任链，能够通知到我们想要通知的handler上。
+
