@@ -714,20 +714,26 @@ protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddr
 那么现在来回答我们初始的几个问题：
 
 1.tcp三次握手是何时发生的？
+
 三次握手发生在执行线程任务的时候，只有在doConnect方法中调用socket去连接的时候才会发生，但是发生之后，并不会立马连接上，这里是个异步方法。
 在这里去注册一个connect事件，等到线程select到这个key的时候，会完成connect。
 
 2.channel什么时候registered?
+
 registed是所有的状态中第一个完成的状态，是给channel注册一个key=0。
 3.channel什么时候connect?
+
 等到底层执行完三次握手之后，selector阻塞轮询就会感知到这个状态，并且执行finishConnect()通知大家这个channel变成了active。
+
 4.channel什么时候active?
+
 如上；
 
 
 所以说了这么一大串，netty的流程看起来好像很多回调然后流程上跑来跑去的，但是其实我们只需要抓住两个最大的核心就可以了：
 
 1.netty的线程模型为什么保证了对于同一个channel来说，它是线程安全的？
+
 因为它有个最为经典的判断
  ```java
 if(ineventloop()){
@@ -737,6 +743,8 @@ if(ineventloop()){
 }
 ```
 这就保证了同一个channel不会被两个线程共享，同一个channel的管理也一定是在同一个线程中完成的（这里只说netty的eventloop线程组）
+
 2.那怎么保证这个channel的状态迁移在我们可以控制的范围内呢？
+
 那就是回调+责任链的方式，通过回调，保证了流程上是受到我们的控制的(先register之后才能connect，connect成功了才能active)，通过责任链，能够通知到我们想要通知的handler上。
 
